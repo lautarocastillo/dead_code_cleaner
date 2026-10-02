@@ -8,8 +8,8 @@
 #   DELETE=true bundle exec rake unused:ruby_methods  # ALSO deletes high-confidence unused methods
 #   DIR=app/models bundle exec rake unused:ruby_methods   # scope to one directory, e.g. just models
 #
-#   bundle exec rake unused:css               # reports AND deletes high-confidence unused classes
-#   DRY_RUN=true bundle exec rake unused:css  # reports only
+#   bundle exec rake unused:css              # report only
+#   DELETE=true bundle exec rake unused:css # ALSO deletes high-confidence unused classes
 #
 #   bundle exec rake unused:js                # report only
 #   DELETE=true bundle exec rake unused:js    # ALSO deletes high-confidence unused functions
@@ -58,7 +58,7 @@ namespace :unused do
     DeadCodeCleaner::RubyMethodScanner.new(config).run(delete: ENV['DELETE'] == 'true')
   end
 
-  desc 'Scan app/assets/stylesheets for unused CSS classes; deletes high-confidence ones unless DRY_RUN=true'
+  desc 'Scan app/assets/stylesheets for unused CSS classes; reports only unless DELETE=true'
   task :css do
     config = DeadCodeCleaner::CssScanner::Config.new(
       root: app_root,
@@ -72,7 +72,7 @@ namespace :unused do
       excluded_path_fragments: ['/assets/builds/'],
       vendor_override_filenames: ['_plugin-overrides.scss']
     )
-    DeadCodeCleaner::CssScanner.new(config).run(delete: ENV['DRY_RUN'] != 'true')
+    DeadCodeCleaner::CssScanner.new(config).run(delete: ENV['DELETE'] == 'true')
   end
 
   desc 'Scan app/javascript for unused JS functions/methods; reports only unless DELETE=true'

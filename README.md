@@ -32,8 +32,8 @@ DELETE=true bundle exec rake unused:ruby_methods
 DIR=app/models bundle exec rake unused:ruby_methods
 
 # CSS classes under app/assets/stylesheets
-bundle exec rake unused:css              # reports AND deletes high-confidence matches
-DRY_RUN=true bundle exec rake unused:css # report only
+bundle exec rake unused:css
+DELETE=true bundle exec rake unused:css
 
 # JS functions/methods under app/javascript
 bundle exec rake unused:js
@@ -45,6 +45,7 @@ DELETE=true bundle exec rake unused:views
 
 # everything at once (report-only / each task's default mode)
 bundle exec rake unused:all
+DELETE=true bundle exec rake unused:all
 ```
 
 Each task writes a full report to `tmp/unused_<name>_report.txt` and also
