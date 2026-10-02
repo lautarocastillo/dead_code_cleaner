@@ -64,7 +64,11 @@ namespace :unused do
       root: app_root,
       stylesheets_dir: File.join(app_root, 'app/assets/stylesheets'),
       report_path: File.join(app_root, 'tmp/unused_css_report.txt'),
-      usage_globs: [File.join(app_root, 'app/**/*.{rb,erb,js,scss}'), File.join(app_root, 'spec/**/*.rb')],
+      usage_globs: [
+        File.join(app_root, 'app/**/*.{rb,erb,js,scss}'),
+        File.join(app_root, 'spec/**/*.rb'),
+        File.join(app_root, 'config/locales/**/*.yml')
+      ],
       excluded_path_fragments: ['/assets/builds/'],
       vendor_override_filenames: ['_plugin-overrides.scss']
     )
