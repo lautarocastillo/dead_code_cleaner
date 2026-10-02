@@ -90,7 +90,10 @@ module DeadCodeCleaner
       end
 
       deleted, skipped = delete ? delete_unused!(unused) : [[], []]
-      normalize_blank_lines!(target_files) if delete
+      if delete
+        remove_empty_private_declarations!(target_files)
+        normalize_blank_lines!(target_files)
+      end
       write_report(unused: unused, needs_review: needs_review, dynamic_defs: @dynamic_defs,
                    always_used: always_used, deleted: deleted, skipped: skipped, deleted_mode: delete)
     end
@@ -232,6 +235,28 @@ module DeadCodeCleaner
         original_size = lines.size
         collapse_consecutive_blank_lines!(lines)
         File.write(file, lines.join) if lines.size != original_size
+      end
+    end
+
+    def remove_empty_private_declarations!(files)
+      files.each do |file|
+        lines = File.readlines(file, encoding: 'UTF-8')
+        original_lines = lines.dup
+
+        lines.each_with_index do |line, idx|
+          next unless line.sub(/#.*/, '').strip == 'private'
+
+          following_idx = idx + 1
+          following_idx += 1 while following_idx < lines.size && lines[following_idx].sub(/#.*/, '').strip.empty?
+          next if following_idx >= lines.size
+          next unless lines[following_idx].strip == 'end'
+          next unless lines[following_idx][/\A */].size <= line[/\A */].size
+
+          lines[idx] = nil
+        end
+
+        lines.compact!
+        File.write(file, lines.join) if lines != original_lines
       end
     end
 
