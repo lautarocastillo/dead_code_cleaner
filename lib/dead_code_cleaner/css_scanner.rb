@@ -18,8 +18,16 @@ module DeadCodeCleaner
       :usage_globs,                 # glob(s) of template/source files to search for class usage
       :excluded_path_fragments,     # path fragments to exclude from usage scanning (build output)
       :vendor_override_filenames,   # filenames that only style vendor-injected markup - never flagged
+      :controllers_dir,             # used to derive controller/action-based class names (defaults to app/controllers)
+      :views_dir,                   # used to derive controller/action-based class names (defaults to app/views)
       keyword_init: true
     )
+
+    # Rails layouts routinely build a body/page class out of the current
+    # request (`"#{controller_name}-#{action_name}"`), so a live class like
+    # `.patients-edit` never appears literally anywhere in the source.
+    REQUEST_CLASS_MARKERS = /controller_name|action_name|controller_path|params\[:controller\]|params\[:action\]/
+    REQUEST_CLASS_SEPARATORS = ['-', '_', '--', '__'].freeze
 
     # Sass %placeholders are intentionally ignored: they never reach the DOM
     # as classes, so "unused class" scanning doesn't apply to them.
@@ -137,6 +145,8 @@ module DeadCodeCleaner
         elsif dynamic_fragments[:prefixes].any? { |frag| name.start_with?(frag) } ||
               dynamic_fragments[:suffixes].any? { |frag| name.end_with?(frag) }
           needs_review << { name: name, occurrences: occurrences, reason: 'matches a dynamically-built class-name fragment (string interpolation)' }
+        elsif request_class_names.include?(name)
+          needs_review << { name: name, occurrences: occurrences, reason: 'matches a Rails controller/action name - layouts build body classes from controller_name/action_name' }
         elsif occurrences.all? { |o| o[:exclusive] }
           unused << { name: name, occurrences: occurrences }
         else
@@ -162,6 +172,86 @@ module DeadCodeCleaner
 
     def scss_files
       Dir.glob(File.join(config.stylesheets_dir, '**/*.scss')).sort
+    end
+
+    def controllers_dir
+      config.controllers_dir || File.join(config.root, 'app/controllers')
+    end
+
+    def views_dir
+      config.views_dir || File.join(config.root, 'app/views')
+    end
+
+    # Every class name the app could produce from the current controller and
+    # action, so request-derived classes (`.patients`, `.patients-edit`, ...)
+    # are never treated as unused. Only built when the corpus actually
+    # references controller_name/action_name somewhere.
+    def request_class_names
+      @request_class_names ||= build_request_class_names
+    end
+
+    def build_request_class_names
+      names = Set.new
+      return names unless corpus_builds_classes_from_request?
+
+      controller_variants_with_actions.each do |variants, actions|
+        variants.each do |controller|
+          names << controller
+          actions.each do |action|
+            names << action
+            REQUEST_CLASS_SEPARATORS.each { |sep| names << "#{controller}#{sep}#{action}" }
+          end
+        end
+      end
+
+      names
+    end
+
+    def corpus_builds_classes_from_request?
+      corpus_files.any? do |file|
+        content = begin
+          File.read(file, encoding: 'UTF-8')
+        rescue StandardError
+          next false
+        end
+
+        content.match?(REQUEST_CLASS_MARKERS)
+      end
+    end
+
+    # `admin/patients_controller.rb` yields "patients" (controller_name) plus
+    # the namespaced spellings ("admin-patients", "admin_patients", ...).
+    def controller_variants_with_actions
+      Dir.glob(File.join(controllers_dir, '**/*_controller.rb')).map do |file|
+        path = file.sub("#{controllers_dir}/", '').sub(/_controller\.rb\z/, '')
+        segments = path.split('/')
+        variants = Set.new([segments.last])
+        REQUEST_CLASS_SEPARATORS.each { |sep| variants << segments.join(sep) }
+
+        [variants, action_names(file, path)]
+      end
+    end
+
+    # Templates count as actions too: Rails renders them without a matching
+    # `def` when the controller has no explicit action method.
+    def action_names(controller_file, controller_path)
+      actions = Set.new
+
+      content = begin
+        File.read(controller_file, encoding: 'UTF-8')
+      rescue StandardError
+        nil
+      end
+      content&.scan(/^\s*def\s+([a-z_][A-Za-z0-9_]*)/) { |(action)| actions << action }
+
+      Dir.glob(File.join(views_dir, controller_path, '*')).each do |template|
+        base = File.basename(template).split('.').first
+        next if base.nil? || base.empty? || base.start_with?('_')
+
+        actions << base
+      end
+
+      actions
     end
 
     def ruby_and_js_files
@@ -216,8 +306,9 @@ module DeadCodeCleaner
     end
 
     # Collects static text immediately touching string interpolation
-    # (Ruby "#{...}" / JS template literals "${...}") so that classes only
-    # ever spelled out dynamically (e.g. "icon_#{name}") aren't deleted.
+    # (Ruby "#{...}", JS template literals "${...}", ERB tags "<%= ... %>")
+    # so that classes only ever spelled out dynamically - e.g. "icon_#{name}"
+    # or `class="card card--<%= variant %>"` - aren't deleted.
     def collect_dynamic_fragments(files)
       prefixes = Set.new
       suffixes = Set.new
@@ -233,6 +324,8 @@ module DeadCodeCleaner
         content.scan(/#\{[^{}]*\}([A-Za-z0-9_-]{4,})/) { |(frag)| suffixes << frag }
         content.scan(/([A-Za-z0-9_-]{4,})\$\{[^{}]*\}/) { |(frag)| prefixes << frag }
         content.scan(/\$\{[^{}]*\}([A-Za-z0-9_-]{4,})/) { |(frag)| suffixes << frag }
+        content.scan(/([A-Za-z0-9_-]{4,})<%.*?%>/m) { |(frag)| prefixes << frag }
+        content.scan(/<%.*?%>([A-Za-z0-9_-]{4,})/m) { |(frag)| suffixes << frag }
       end
 
       { prefixes: prefixes, suffixes: suffixes }

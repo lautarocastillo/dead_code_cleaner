@@ -37,6 +37,13 @@ namespace :unused do
     after_database_authentication send_devise_notification
   ].freeze
 
+  # Directories whose classes are driven entirely by a gem's DSL, so a text
+  # scan of our own source never sees the call sites (e.g. CarrierWave calls
+  # `extension_allowlist`, `store_dir`, `default_url` on uploaders itself).
+  RUBY_METHODS_EXCLUDED_DEFINITION_PATHS = [
+    '/app/uploaders/'
+  ].freeze
+
   desc 'Scan app/**/*.rb (or DIR=...) for unused methods; reports only unless DELETE=true'
   task :ruby_methods do
     dir = File.join(app_root, ENV['DIR'] || 'app')
@@ -53,6 +60,7 @@ namespace :unused do
         File.join(app_root, 'config/routes.rb')
       ],
       excluded_path_fragments: ['/assets/builds/'],
+      excluded_definition_path_fragments: RUBY_METHODS_EXCLUDED_DEFINITION_PATHS,
       always_used_names: RUBY_METHODS_ALWAYS_USED_NAMES
     )
     DeadCodeCleaner::RubyMethodScanner.new(config).run(delete: ENV['DELETE'] == 'true')
@@ -70,7 +78,9 @@ namespace :unused do
         File.join(app_root, 'config/locales/**/*.yml')
       ],
       excluded_path_fragments: ['/assets/builds/'],
-      vendor_override_filenames: ['_plugin-overrides.scss']
+      vendor_override_filenames: ['_plugin-overrides.scss'],
+      controllers_dir: File.join(app_root, 'app/controllers'),
+      views_dir: File.join(app_root, 'app/views')
     )
     DeadCodeCleaner::CssScanner.new(config).run(delete: ENV['DELETE'] == 'true')
   end

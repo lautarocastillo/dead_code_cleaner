@@ -50,15 +50,20 @@ DELETE=true bundle exec rake unused:all
 
 Each task writes a full report to `tmp/unused_<name>_report.txt` and also
 prints it to stdout, with sections for high-confidence unused items, items
-that need manual review (setters, dynamically-built names, shared CSS
-selectors, Rails' implicit partial rendering convention, etc.), and anything
-excluded from checks (framework-invoked names, vendor stylesheet overrides).
+that need manual review (setters, dynamically-built names - including ERB
+`<%= %>` interpolation and Rails controller/action body classes such as
+`.patients-edit` - shared CSS selectors, Rails' implicit partial rendering
+convention, etc.), and anything excluded from checks (framework-invoked
+names, vendor stylesheet overrides).
 
 ## Adjusting for a different app's conventions
 
 The rake task in `lib/tasks/dead_code_cleaner.rake` builds a small `Config`
 struct per scanner (glob patterns, excluded paths, names to always treat as
-used). Edit the values there - directly in this gem, or by copying the task
+used). `app/uploaders` is skipped by default - CarrierWave invokes
+`extension_allowlist`, `store_dir`, `default_url` etc. itself, so a text scan
+would flag them as unused; add more such gem-driven directories to
+`RUBY_METHODS_EXCLUDED_DEFINITION_PATHS`. Edit the values there - directly in this gem, or by copying the task
 file into the consuming app's `lib/tasks/` and requiring the scanner classes
 instead of relying on the Railtie - if your app uses different directories,
 template extensions (`.haml`, `.slim`, ...), or has extra reflectively

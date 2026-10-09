@@ -39,6 +39,10 @@ module DeadCodeCleaner
       :report_path,             # where to write the text report
       :usage_globs,             # glob(s) of files to search for usages
       :excluded_path_fragments, # path fragments to exclude from usage scanning (build output, vendor)
+      # path fragments whose `.rb` files are never scanned for definitions - for
+      # classes whose whole API is called by a gem (e.g. CarrierWave uploaders'
+      # `extension_allowlist`, `store_dir`, version blocks)
+      :excluded_definition_path_fragments,
       :always_used_names,       # method names invoked reflectively/by the framework - never flagged
       keyword_init: true
     )
@@ -80,8 +84,7 @@ module DeadCodeCleaner
         extra = total - occurrences.size
         next if extra > 0 # found somewhere beyond its own definition(s)
 
-        if dynamic_fragments[:prefixes].any? { |frag| name.start_with?(frag) } ||
-           dynamic_fragments[:suffixes].any? { |frag| name.end_with?(frag) }
+        if matches_dynamic_fragment?(name, dynamic_fragments)
           needs_review << { name: name, occurrences: occurrences,
                              reason: 'matches a dynamically-built method-name fragment (string interpolation) - verify manually' }
         else
@@ -103,7 +106,9 @@ module DeadCodeCleaner
     attr_reader :config
 
     def target_files
-      Dir.glob(File.join(config.dir, '**/*.rb')).sort
+      excluded = config.excluded_definition_path_fragments || []
+      files = Dir.glob(File.join(config.dir, '**/*.rb')).sort
+      files.reject { |f| excluded.any? { |frag| f.include?(frag) } }
     end
 
     def corpus_files
@@ -161,10 +166,24 @@ module DeadCodeCleaner
         end
 
         content.scan(/([A-Za-z0-9_]{3,})#\{[^{}]*\}/) { |(frag)| prefixes << frag }
-        content.scan(/#\{[^{}]*\}([A-Za-z0-9_]{3,})/) { |(frag)| suffixes << frag }
+        content.scan(/#\{[^{}]*\}([A-Za-z0-9_]{3,}[?!=]?)/) { |(frag)| suffixes << frag }
       end
 
       { prefixes: prefixes, suffixes: suffixes }
+    end
+
+    # Compared with trailing `?`/`!`/`=` stripped on both sides, so
+    # `def instagram_can_publish_image?` still matches the fragment captured
+    # from `send("#{sub_provider}_can_publish_image?")`.
+    def matches_dynamic_fragment?(name, dynamic_fragments)
+      bare_name = strip_method_suffix(name)
+
+      dynamic_fragments[:prefixes].any? { |frag| bare_name.start_with?(strip_method_suffix(frag)) } ||
+        dynamic_fragments[:suffixes].any? { |frag| bare_name.end_with?(strip_method_suffix(frag)) }
+    end
+
+    def strip_method_suffix(name)
+      name.sub(/[?!=]\z/, '')
     end
 
     def build_token_counts
